@@ -1,0 +1,10 @@
+= Elastic Security
+Dieudonne <simolx@163.com>
+v1.0, 2019-11-28
+:toc:
+:imagesdir: assets/images
+:chapterdir: assets/chapter
+
+include::{chapterdir}/elasticsearch-security.adoc[]
+
+include::{chapterdir}/kibana-security.adoc[]
