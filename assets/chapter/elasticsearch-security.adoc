@@ -1,7 +1,7 @@
 == ElasticSearch Security
 
 === 为ElasticSearch设置用户和权限
-. 确定license
+. 确定 license
 . 配置 `xpack.security.enabled: true`
 . `FIPS 140-2`
 . 配置节点间安全传输
@@ -16,7 +16,9 @@ bin/elasticsearch-certutil cert --ca elastic-stack-ca.p12
 
 ... 将生成的.p12文件拷贝到ES配置文件所在目录下，如 `/home/es/config/certs`
 +
-... 配置证书
+.. 配置证书
+
+... 为每个节点的transport层配置证书
 +
 [source, yaml]
 ----
@@ -39,10 +41,127 @@ xpack.security.transport.ssl.certificate_authorities: [ "/home/es/config/ca.crt"
 [source, bash]
 ----
 # PKCS#12 格式
-in/elasticsearch-keystore add xpack.security.transport.ssl.keystore.secure_password
+bin/elasticsearch-keystore add xpack.security.transport.ssl.keystore.secure_password
 
 bin/elasticsearch-keystore add xpack.security.transport.ssl.truststore.secure_password
 
 # PEM 格式
 bin/elasticsearch-keystore add xpack.security.transport.ssl.secure_key_passphrase
+----
+
+... 为每个节点的http层配置证书
++
+[source, yaml]
+----
+# PKCS#12 格式
+xpack.security.http.ssl.enabled: true
+xpack.security.http.ssl.verification_mode: certificate
+xpack.security.http.ssl.keystore.path: certs/elastic-certificates.p12 
+xpack.security.http.ssl.truststore.path: certs/elastic-certificates.p12 
+
+# PEM 格式
+xpack.security.http.ssl.enabled: true
+# xpack.security.http.ssl.verification_mode: certificate
+xpack.security.http.ssl.key: /home/es/config/node01.key 
+xpack.security.http.ssl.certificate: /home/es/config/node01.crt 
+xpack.security.http.ssl.certificate_authorities: [ "/home/es/config/ca.crt" ] 
+----
+
+... 如果生成的节点证书设置了密码，则
++
+[source, bash]
+----
+# PKCS#12 格式
+bin/elasticsearch-keystore add xpack.security.http.ssl.keystore.secure_password
+
+bin/elasticsearch-keystore add xpack.security.http.ssl.truststore.secure_password
+
+# PEM 格式
+bin/elasticsearch-keystore add xpack.security.http.ssl.secure_key_passphrase
+----
+
+.. 节点和 Active Directory 服务的安全配置
+.. 节点和 LDAP 服务的安全配置
+
+. 重启节点
+. 为默认用户设置密码
++
+[source, bash]
+----
+bin/elasticsearch-setup-passwords interactive
+----
++
+或者为elastic用户设置bootstrap密码，使用改用户和密码登录kibana，通过UI设置其他内置用户和密码
++
+[source, bash]
+----
+bin/elasticsearch-keystore add "bootstrap.password"
+----
+
+. 设置realms类型
+. 设置用户和角色
++
+[source, bash]
+----
+curl -XPOST -u elastic 'localhost:9200/_security/role/events_admin' -H "Content-Type: application/json" -d '{
+  "indices" : [
+    {
+      "names" : [ "events*" ],
+      "privileges" : [ "all" ]
+    },
+    {
+      "names" : [ ".kibana*" ],
+      "privileges" : [ "manage", "read", "index" ]
+    }
+  ]
+}'
+
+curl -XPOST -u elastic 'localhost:9200/_security/user/johndoe' -H "Content-Type: application/json" -d '{
+  "password" : "userpassword",
+  "full_name" : "John Doe",
+  "email" : "john.doe@anony.mous",
+  "roles" : [ "events_admin" ]
+}'
+----
+
+. 启用auditing
+.. 在配置文件`elasticsearch.yml`中添加：
++
+[source, yaml]
+----
+xpack.security.audit.enabled: true
+----
+
+.. 重启节点
+
+. 配置Kibana
+.. 为kibana配置ElasticSearch相关用户
++
+[source, yml]
+----
+elasticsearch.username: "kibana"
+elasticsearch.password: "kibana"
+----
+.. 如果ElasticSearch启用SSL/TSL，则
+... 增加配置
++
+[source, yml]
+----
+elasticsearch.ssl.verificationMode: none
+----
+... 或者生成并配置PEM
+.... 执行如下命令生成PEM
++
+[source, bash]
+----
+openssl pkcs12 -in elastic-certificates.p12 -out elastic-certificates.pem
+mkdir ../kibana-7.4.2-linux-x86_64/config/certs
+cp elastic-certificates.pem ../kibana-7.4.2-linux-x86_64/config/certs/
+----
+.... 配置PEM
++
+[source, yml]
+----
+elasticsearch.ssl.certificateAuthorities: [ "/path/to/your/kibana-7.4.2-linux-x86_64/config/certs/elastic-certificates.pem" ]
+elasticsearch.ssl.verificationMode: certificate
 ----
